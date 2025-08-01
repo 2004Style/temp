@@ -1,7 +1,6 @@
 # Dependencias principales del proyecto
+opencv-python
 numpy
-pandas
-scikit-learn
-tensorflow
-pillow
 matplotlib
+tensorflow
+tensorboard
