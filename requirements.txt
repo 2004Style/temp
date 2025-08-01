@@ -1,0 +1,7 @@
+# Dependencias principales del proyecto
+numpy
+pandas
+scikit-learn
+tensorflow
+pillow
+matplotlib
