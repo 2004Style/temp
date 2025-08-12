@@ -1,0 +1,1 @@
+tensorboard --logdir=logs/ejemplo --port=8080
