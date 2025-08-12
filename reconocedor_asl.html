@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconocedor ASL - Lenguaje de Señas</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            transition: border-color 0.3s;
+        }
+
+        .upload-area:hover {
+            border-color: #007bff;
+        }
+
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+
+        #imageInput {
+            margin: 10px 0;
+        }
+
+        #preview {
+            max-width: 300px;
+            max-height: 300px;
+            margin: 20px auto;
+            display: none;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+        }
+
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .prediction {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+            margin: 10px 0;
+        }
+
+        .confidence {
+            font-size: 18px;
+            color: #666;
+        }
+
+        .loading {
+            color: #ffc107;
+        }
+
+        .error {
+            color: #dc3545;
+        }
+
+        .success {
+            color: #28a745;
+        }
+
+        .probabilities {
+            margin-top: 15px;
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .prob-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🤟 Reconocedor de Lenguaje de Señas ASL</h1>
+
+        <div class="upload-area" id="uploadArea">
+            <p>📸 Arrastra una imagen aquí o selecciona un archivo</p>
+            <input type="file" id="imageInput" accept="image/*">
+            <button onclick="document.getElementById('imageInput').click()">
+                Seleccionar Imagen
+            </button>
+        </div>
+
+        <img id="preview" alt="Vista previa">
+
+        <div id="result">
+            <p>Carga una imagen para comenzar el reconocimiento</p>
+        </div>
+    </div>
+
+    <script>
+        // Configuración
+        const MODEL_URL = '../modelo_exportado/modelo_asl_js/model.json';
+        const IMAGE_SIZE = 100;
+
+        // Clases del alfabeto ASL (en el mismo orden que durante el entrenamiento)
+        const CLASES_ASL = [
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+            'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+            'del', 'nothing', 'space'
+        ];
+
+        let modelo = null;
+
+        // Referencias a elementos DOM
+        const imageInput = document.getElementById('imageInput');
+        const preview = document.getElementById('preview');
+        const result = document.getElementById('result');
+        const uploadArea = document.getElementById('uploadArea');
+
+        // Cargar modelo al iniciar
+        async function cargarModelo() {
+            try {
+                result.innerHTML = '<p class="loading">⏳ Cargando modelo...</p>';
+                modelo = await tf.loadLayersModel(MODEL_URL);
+                result.innerHTML = '<p class="success">✅ Modelo cargado. Selecciona una imagen para comenzar.</p>';
+                console.log('Modelo cargado exitosamente');
+            } catch (error) {
+                console.error('Error al cargar el modelo:', error);
+                result.innerHTML = `<p class="error">❌ Error al cargar el modelo: ${error.message}</p>`;
+            }
+        }
+
+        // Preprocesar imagen
+        function preprocesarImagen(img) {
+            return tf.tidy(() => {
+                // Convertir a tensor
+                let tensor = tf.browser.fromPixels(img);
+
+                // Convertir a escala de grises
+                tensor = tf.image.rgbToGrayscale(tensor);
+
+                // Redimensionar a 100x100
+                tensor = tf.image.resizeBilinear(tensor, [IMAGE_SIZE, IMAGE_SIZE]);
+
+                // Normalizar (0-255 → 0-1)
+                tensor = tensor.div(255.0);
+
+                // Agregar dimensión de batch
+                tensor = tensor.expandDims(0);
+
+                return tensor;
+            });
+        }
+
+        // Realizar predicción
+        async function predecir(img) {
+            if (!modelo) {
+                throw new Error('El modelo no está cargado');
+            }
+
+            const tensor = preprocesarImagen(img);
+            const prediccion = await modelo.predict(tensor).data();
+            tensor.dispose();
+
+            return Array.from(prediccion);
+        }
+
+        // Mostrar resultados
+        function mostrarResultados(probabilidades) {
+            // Encontrar la clase con mayor probabilidad
+            const indiceMaximo = probabilidades.indexOf(Math.max(...probabilidades));
+            const clasePredicha = CLASES_ASL[indiceMaximo];
+            const confianza = probabilidades[indiceMaximo];
+
+            // Ordenar probabilidades para mostrar top 5
+            const probabilidadesOrdenadas = probabilidades
+                .map((prob, idx) => ({ clase: CLASES_ASL[idx], probabilidad: prob }))
+                .sort((a, b) => b.probabilidad - a.probabilidad)
+                .slice(0, 5);
+
+            // Crear HTML del resultado
+            let html = `
+                <div class="prediction">
+                    Predicción: "${clasePredicha}"
+                </div>
+                <div class="confidence">
+                    Confianza: ${(confianza * 100).toFixed(2)}%
+                </div>
+                <div class="probabilities">
+                    <h4>Top 5 Predicciones:</h4>
+            `;
+
+            probabilidadesOrdenadas.forEach((item, idx) => {
+                html += `
+                    <div class="prob-item">
+                        <span>${idx + 1}. ${item.clase}</span>
+                        <span>${(item.probabilidad * 100).toFixed(2)}%</span>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            result.innerHTML = html;
+        }
+
+        // Manejar selección de archivo
+        async function manejarArchivo(file) {
+            if (!file || !file.type.startsWith('image/')) {
+                result.innerHTML = '<p class="error">❌ Por favor selecciona una imagen válida</p>';
+                return;
+            }
+
+            try {
+                // Mostrar vista previa
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+
+                    // Crear elemento imagen para procesamiento
+                    const img = new Image();
+                    img.onload = async () => {
+                        try {
+                            result.innerHTML = '<p class="loading">🔍 Analizando imagen...</p>';
+
+                            // Realizar predicción
+                            const probabilidades = await predecir(img);
+                            mostrarResultados(probabilidades);
+
+                        } catch (error) {
+                            console.error('Error en predicción:', error);
+                            result.innerHTML = `<p class="error">❌ Error en predicción: ${error.message}</p>`;
+                        }
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+
+            } catch (error) {
+                console.error('Error procesando archivo:', error);
+                result.innerHTML = `<p class="error">❌ Error procesando archivo: ${error.message}</p>`;
+            }
+        }
+
+        // Event listeners
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            manejarArchivo(file);
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            manejarArchivo(file);
+        });
+
+        // Cargar modelo al iniciar
+        cargarModelo();
+    </script>
+</body>
+
+</html>
